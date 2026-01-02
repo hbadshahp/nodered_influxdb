@@ -1,0 +1,165 @@
+[
+    {
+        "id": "288afba8ce20c2f9",
+        "type": "inject",
+        "z": "e2733298a0869606",
+        "name": "Poll Every Hour (8:00, 9:00, 10:00...)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "0 0 * * *",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 220,
+        "y": 740,
+        "wires": [
+            [
+                "993e507aa6ac8e57"
+            ]
+        ]
+    },
+    {
+        "id": "993e507aa6ac8e57",
+        "type": "function",
+        "z": "e2733298a0869606",
+        "name": "Production count Request",
+        "func": "msg.payload = \"RDS DM01001 5\\r\";\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 550,
+        "y": 740,
+        "wires": [
+            [
+                "251b3a4fff483898"
+            ]
+        ]
+    },
+    {
+        "id": "251b3a4fff483898",
+        "type": "tcp request",
+        "z": "e2733298a0869606",
+        "name": "PLC",
+        "server": "192.168.0.151",
+        "port": "8501",
+        "out": "char",
+        "ret": "string",
+        "splitc": "\\n",
+        "newline": "",
+        "trim": true,
+        "tls": "",
+        "x": 780,
+        "y": 740,
+        "wires": [
+            [
+                "c0064c840981bfc5",
+                "27b30f4303b96b0c"
+            ]
+        ]
+    },
+    {
+        "id": "c0064c840981bfc5",
+        "type": "debug",
+        "z": "e2733298a0869606",
+        "name": "Debug Raw Response",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 900,
+        "y": 640,
+        "wires": []
+    },
+    {
+        "id": "8a5512b7df590e74",
+        "type": "influxdb out",
+        "z": "e2733298a0869606",
+        "influxdb": "influx_connection",
+        "name": "Write to InfluxDB",
+        "measurement": "",
+        "precision": "ms",
+        "retentionPolicy": "",
+        "database": "",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "Atomone",
+        "bucket": "machine_count",
+        "x": 1370,
+        "y": 740,
+        "wires": []
+    },
+    {
+        "id": "27b30f4303b96b0c",
+        "type": "function",
+        "z": "e2733298a0869606",
+        "name": "function 13",
+        "func": "// Raw string from PLC\nlet raw = msg.payload;  \n// Example: \"00947 00000 00000 01128 00519\"\n\n// Machine numbers mapping\nconst machines = [201, 202, 203, 204, 205];\n\n// Split string → array of numbers\nlet counts = raw.trim().split(/\\s+/).map(Number);\n\n// Prepare InfluxDB payload\nlet points = [];\n\ncounts.forEach((count, index) => {\n    points.push([\n        { count: count },                 // FIELD (mandatory)\n        { machine: machines[index] + \"\" } // TAG (string recommended)\n    ]);\n});\n\n// Final message for InfluxDB out node\nmsg.measurement = \"machine_count\";\nmsg.payload = points;\nmsg.timestamp = Date.now();\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1050,
+        "y": 740,
+        "wires": [
+            [
+                "5c93f9c61ea17b05",
+                "8a5512b7df590e74"
+            ]
+        ]
+    },
+    {
+        "id": "5c93f9c61ea17b05",
+        "type": "debug",
+        "z": "e2733298a0869606",
+        "name": "debug 22",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1090,
+        "y": 980,
+        "wires": []
+    },
+    {
+        "id": "influx_connection",
+        "type": "influxdb",
+        "hostname": "localhost",
+        "port": "8086",
+        "protocol": "http",
+        "database": "plc_database",
+        "name": "InfluxDB Connection",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "timeout": "",
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "014a164d9f797d4a",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-influxdb": "0.7.0"
+        }
+    }
+]
