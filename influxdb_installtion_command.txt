@@ -1,0 +1,17 @@
+Open PowerShell as Administrator
+
+PowerShell commands 1
+
+>Invoke-WebRequest https://download.influxdata.com/influxdb/releases/v2.7.12/influxdb2-2.7.12-windows.zip -UseBasicParsing -OutFile influxdb2-2.7.12-windows.zip
+
+PowerShell commands 2
+
+>Expand-Archive -Path .\influxdb2-2.7.12-windows.zip -DestinationPath "C:\Program Files\InfluxData\influxdb" -Force
+
+Check this folder:
+
+>cd "C:\Program Files\InfluxData\influxdb"
+
+then run
+
+>.\influxd.exe

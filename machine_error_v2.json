@@ -1,0 +1,378 @@
+[
+    {
+        "id": "df5b85731b99a9fc",
+        "type": "inject",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Poll Every 5 Minutes",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "300",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "5",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 3400,
+        "y": 1640,
+        "wires": [
+            [
+                "61b20b730f3e670c"
+            ]
+        ]
+    },
+    {
+        "id": "c5d747140181d4ae",
+        "type": "function",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Machine Configuration",
+        "func": "// ============================================\n// MACHINE CONFIGURATION - EDIT HERE\n// ============================================\nconst MACHINE_NUMBERS = [\n    219, 220\n];\n\nconst FIRST_EM_REGISTER = 10163;\nconst REGISTERS_PER_MACHINE = 9;\nconst TOTAL_MACHINES = MACHINE_NUMBERS.length;\nconst TOTAL_REGISTERS = TOTAL_MACHINES * REGISTERS_PER_MACHINE;\nconst LAST_EM_REGISTER = FIRST_EM_REGISTER + TOTAL_REGISTERS - 1;\n\nglobal.set('machineConfig', {\n    machineNumbers: MACHINE_NUMBERS,\n    totalMachines: TOTAL_MACHINES,\n    registersPerMachine: REGISTERS_PER_MACHINE,\n    firstEmRegister: FIRST_EM_REGISTER,\n    lastEmRegister: LAST_EM_REGISTER,\n    totalRegisters: TOTAL_REGISTERS\n});\n\nnode.warn(`Machine Configuration Loaded:`);\nnode.warn(`- Total Machines: ${TOTAL_MACHINES}`);\nnode.warn(`- EM Register Range: EM${FIRST_EM_REGISTER} to EM${LAST_EM_REGISTER}`);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "const MACHINE_NUMBERS = [219, 220];\nconst FIRST_EM_REGISTER = 10163;\nconst REGISTERS_PER_MACHINE = 9;\nconst TOTAL_MACHINES = MACHINE_NUMBERS.length;\nconst TOTAL_REGISTERS = TOTAL_MACHINES * REGISTERS_PER_MACHINE;\nconst LAST_EM_REGISTER = FIRST_EM_REGISTER + TOTAL_REGISTERS - 1;\n\nglobal.set('machineConfig', {\n    machineNumbers: MACHINE_NUMBERS,\n    totalMachines: TOTAL_MACHINES,\n    registersPerMachine: REGISTERS_PER_MACHINE,\n    firstEmRegister: FIRST_EM_REGISTER,\n    lastEmRegister: LAST_EM_REGISTER,\n    totalRegisters: TOTAL_REGISTERS\n});",
+        "finalize": "",
+        "libs": [],
+        "x": 3780,
+        "y": 1500,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "6b02dcbb8b3c7408",
+        "type": "inject",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Reload CSV Cache",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 3460,
+        "y": 1400,
+        "wires": [
+            [
+                "ae594aa1f71c83d4"
+            ]
+        ]
+    },
+    {
+        "id": "61b20b730f3e670c",
+        "type": "function",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Request All Machines Data",
+        "func": "const config = global.get('machineConfig');\n\nif (!config) {\n    node.error('Machine configuration not loaded!');\n    return null;\n}\n\nconst command = `RDS EM${config.firstEmRegister} ${config.totalRegisters}\\r`;\nmsg.payload = command;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 3720,
+        "y": 1680,
+        "wires": [
+            [
+                "302f5c65f59a39ed"
+            ]
+        ]
+    },
+    {
+        "id": "302f5c65f59a39ed",
+        "type": "tcp request",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Master PLC",
+        "server": "192.168.0.151",
+        "port": "8501",
+        "out": "char",
+        "ret": "string",
+        "splitc": "\\n",
+        "newline": "",
+        "trim": true,
+        "tls": "",
+        "x": 3980,
+        "y": 1680,
+        "wires": [
+            [
+                "a8a6f453af95778e",
+                "01a41e61c890a784"
+            ]
+        ]
+    },
+    {
+        "id": "a8a6f453af95778e",
+        "type": "debug",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Debug Raw PLC Response",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 4280,
+        "y": 1580,
+        "wires": []
+    },
+    {
+        "id": "77c69301889ff129",
+        "type": "function",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Enrich with CSV Descriptions (CACHED LOOKUP)",
+        "func": "// ============================================\n// FAST CSV LOOKUP FROM CACHE\n// Updated for CSV format: Device, Comment, (unnamed 3rd column)\n// ============================================\n\n// Get cached alarm descriptions\nconst alarmCache = global.get('alarmCache');\nconst cacheLoaded = global.get('alarmCacheLoaded');\n\nif (!cacheLoaded || !alarmCache) {\n    node.error('⚠️ Alarm cache not loaded! Please reload CSV.');\n    node.error('Click the \"Reload CSV Cache\" button to load alarm descriptions.');\n    return null;\n}\n\nconst alarmDetails = msg.alarmDetails;\nif (!alarmDetails || alarmDetails.length === 0) {\n    return null;\n}\n\n// ============================================\n// ENRICH EACH ALARM WITH DESCRIPTION\n// ============================================\nlet enrichedPoints = [];\nlet unknownAlarms = 0;\nlet foundAlarms = 0;\n\nalarmDetails.forEach(alarm => {\n    // Fast lookup from cache (< 1ms)\n    const alarmInfo = alarmCache[alarm.deviceId];\n    \n    let description = 'Unknown Alarm';\n    let remark = '';  // Your CSV doesn't have remarks, so always empty\n    \n    if (alarmInfo) {\n        description = alarmInfo.comment || 'Unknown Alarm';\n        foundAlarms++;\n    } else {\n        unknownAlarms++;\n        if (unknownAlarms <= 5) {\n            node.warn(`⚠️ Unknown device: ${alarm.deviceId} (not found in CSV)`);\n        }\n    }\n    \n    // Create enriched data point for InfluxDB\n    enrichedPoints.push([\n        {\n            // Fields (values)\n            //machine: alarm.machine.toString(),\n            //error_value: alarm.errorValue,\n            //bit_position: alarm.bitPosition,\n            //alarm_description: description,\n            //alarm_remark: remark,  // Empty for your CSV format\n            binary_representation: alarm.binary,\n            //status: 'active'\n        },\n        {\n            // Tags (indexed)\n            machine: alarm.machine.toString(),\n            error_value: alarm.errorValue,\n            bit_position: alarm.bitPosition,\n            alarm_description: description,\n            register: alarm.register,\n            em_register: alarm.emRegister,\n            device_id: alarm.deviceId\n        }\n    ]);\n});\n\n// Prepare message for InfluxDB\nmsg.measurement = \"alarm_history\";\nmsg.payload = enrichedPoints;\nmsg.timestamp = Date.now();\n\nnode.warn(`✓ Enriched ${enrichedPoints.length} alarms with descriptions`);\nnode.warn(`  - Found in CSV: ${foundAlarms}`);\nif (unknownAlarms > 0) {\n    node.warn(`  - Unknown devices: ${unknownAlarms} (not in CSV)`);\n    if (unknownAlarms > 5) {\n        node.warn(`    (Only first 5 unknown devices logged)`);\n    }\n}\n\n// Show sample enriched data\nif (enrichedPoints.length > 0) {\n    const sample = enrichedPoints[0];\n    node.warn(`Sample enriched alarm:`);\n    node.warn(`  Machine: ${sample[1].machine}`);\n    node.warn(`  Device: ${sample[1].device_id}`);\n    node.warn(`  Description: \"${sample[0].alarm_description}\"`);\n    node.warn(`  Bit Position: ${sample[0].bit_position}`);\n    node.warn(`  Binary: ${sample[0].binary_representation}`);\n}\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 4350,
+        "y": 1860,
+        "wires": [
+            [
+                "a86ad5131a030129",
+                "340756cf87470cc1",
+                "ae40e6ba995c4db3"
+            ]
+        ]
+    },
+    {
+        "id": "a86ad5131a030129",
+        "type": "debug",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Debug Enriched Data",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 4780,
+        "y": 1760,
+        "wires": []
+    },
+    {
+        "id": "ae40e6ba995c4db3",
+        "type": "influxdb out",
+        "z": "6a48d0fa2ec86a55",
+        "influxdb": "influx_connection",
+        "name": "Write Enriched Data to InfluxDB",
+        "measurement": "",
+        "precision": "ms",
+        "retentionPolicy": "",
+        "database": "",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "Atomone",
+        "bucket": "error_machine",
+        "x": 4810,
+        "y": 1860,
+        "wires": []
+    },
+    {
+        "id": "f1f780296351aa56",
+        "type": "inject",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Manual Test",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 3450,
+        "y": 1780,
+        "wires": [
+            [
+                "61b20b730f3e670c"
+            ]
+        ]
+    },
+    {
+        "id": "01a41e61c890a784",
+        "type": "function",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Mod_Parse & Convert Word to Bits",
+        "func": "// Get configuration\nconst config = global.get('machineConfig');\nif (!config) {\n    node.error('Machine configuration not loaded!');\n    return null;\n}\n\nconst machineNumbers = config.machineNumbers;\nconst registersPerMachine = config.registersPerMachine;\nconst firstEmRegister = config.firstEmRegister;\n\nconst registerNames = [\n    \"D1000\", \"D1001\", \"D1002\", \"D1003\", \n    \"D1004\", \"D1005\", \"D1006\", \"D1007\", \"D1008\"\n];\n\nfunction getMapping(wordPosition) {\n    const zeroBasedIndex = wordPosition - 1;\n    const machineIndex = Math.floor(zeroBasedIndex / registersPerMachine);\n    const registerIndex = zeroBasedIndex % registersPerMachine;\n    const machineNumber = machineNumbers[machineIndex];\n    const registerName = registerNames[registerIndex];\n    const emRegister = firstEmRegister + zeroBasedIndex;\n    \n    return {\n        machine: machineNumber,\n        register: registerName,\n        emRegister: `EM${emRegister}`,\n        machineIndex: machineIndex,\n        registerIndex: registerIndex\n    };\n}\n\n// ============================================\n// FIXED: CONVERT WORD TO BITS - ALL SET BITS\n// ============================================\nfunction convertWordToBits(value, register) {\n    const bits = [];\n    \n    // Convert to 16-bit binary (big-endian representation)\n    const binary = (value >>> 0).toString(2).padStart(16, '0');\n    \n    // Check ALL bits from position 0 to 15\n    for (let bitPosition = 0; bitPosition < 16; bitPosition++) {\n        // Read bit from RIGHT to LEFT (standard bit numbering)\n        // binary string index: 15-bitPosition gives us the correct bit\n        const bitValue = binary[15 - bitPosition];\n        \n        if (bitValue === '1') {\n            const deviceId = `${register}.b${bitPosition}`;\n            bits.push({\n                bitPosition: bitPosition,\n                deviceId: deviceId,\n                binary: binary\n            });\n        }\n    }\n    \n    return bits;\n}\n\n// Parse PLC response\nlet raw = msg.payload;\nlet values = raw.trim().split(/\\s+/).map(Number);\n\nif (values.length !== config.totalRegisters) {\n    node.error(`Expected ${config.totalRegisters} words but got ${values.length}`);\n    return null;\n}\n\n// Store all alarm details for enrichment\nlet alarmDetails = [];\nlet totalAlarms = 0;\n\nvalues.forEach((value, index) => {\n    if (value !== 0) {\n        let wordPosition = index + 1;\n        let mapping = getMapping(wordPosition);\n        \n        // Convert word to individual bits (FIXED - NOW GETS ALL SET BITS)\n        let setBits = convertWordToBits(value, mapping.register);\n        \n        if (setBits.length > 0) {\n            node.warn(`Register ${mapping.register} (EM${mapping.emRegister}): Value=${value}, Binary=${setBits[0].binary}, Found ${setBits.length} active bit(s)`);\n        }\n        \n        setBits.forEach(bit => {\n            alarmDetails.push({\n                machine: mapping.machine,\n                register: mapping.register,\n                emRegister: mapping.emRegister,\n                errorValue: value,\n                bitPosition: bit.bitPosition,\n                deviceId: bit.deviceId,\n                binary: bit.binary\n            });\n            totalAlarms++;\n        });\n    }\n});\n\nif (alarmDetails.length > 0) {\n    msg.alarmDetails = alarmDetails;\n    msg.totalAlarms = totalAlarms;\n    \n    node.warn(`✅ Found ${totalAlarms} active alarms across ${alarmDetails.length} device IDs`);\n    \n    // Show sample for verification\n    alarmDetails.slice(0, 3).forEach(alarm => {\n        node.warn(`  - ${alarm.deviceId}: bit ${alarm.bitPosition} (value=${alarm.errorValue})`);\n    });\n    \n    return msg;\n} else {\n    node.warn('No alarms detected');\n    return null;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 4320,
+        "y": 1760,
+        "wires": [
+            [
+                "5a435daaf2d98784",
+                "77c69301889ff129"
+            ]
+        ]
+    },
+    {
+        "id": "5a435daaf2d98784",
+        "type": "debug",
+        "z": "6a48d0fa2ec86a55",
+        "name": "debug 25",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 4580,
+        "y": 1720,
+        "wires": []
+    },
+    {
+        "id": "440767b8c42b8496",
+        "type": "inject",
+        "z": "6a48d0fa2ec86a55",
+        "d": true,
+        "name": "Demo_data",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "01024 00000 00016 00000 00000 34816 00000 00512 00000 01024 00004 00000 00000 00000 34817 00000 00000 00000",
+        "payloadType": "str",
+        "x": 3850,
+        "y": 1760,
+        "wires": [
+            [
+                "15e8e1309875b4d0",
+                "01a41e61c890a784"
+            ]
+        ]
+    },
+    {
+        "id": "15e8e1309875b4d0",
+        "type": "debug",
+        "z": "6a48d0fa2ec86a55",
+        "name": "debug 26",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 3980,
+        "y": 1860,
+        "wires": []
+    },
+    {
+        "id": "340756cf87470cc1",
+        "type": "function",
+        "z": "6a48d0fa2ec86a55",
+        "d": true,
+        "name": "Saving in json",
+        "func": "// Convert payload to JSON string\nmsg.payload = JSON.stringify(msg.payload, null, 2);\n\n// Give file name (can be dynamic)\n//msg.filename = \"C:/NodeRed/output1.json\";\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 4620,
+        "y": 1920,
+        "wires": [
+            [
+                "fa9dec7e8f01335f"
+            ]
+        ]
+    },
+    {
+        "id": "fa9dec7e8f01335f",
+        "type": "file",
+        "z": "6a48d0fa2ec86a55",
+        "d": true,
+        "name": "",
+        "filename": "C:/NodeRed/output1.json",
+        "filenameType": "str",
+        "appendNewline": true,
+        "createDir": false,
+        "overwriteFile": "true",
+        "encoding": "utf8",
+        "x": 4950,
+        "y": 1920,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "ae594aa1f71c83d4",
+        "type": "function",
+        "z": "6a48d0fa2ec86a55",
+        "name": "Mod_Load CSV Alarm Mapping (CACHED)",
+        "func": "// ============================================\n// CSV ALARM MAPPING LOADER WITH PROPER COMMA HANDLING\n// Handles descriptions that contain commas\n// ============================================\n\nconst CSV_FILE_PATH = 'C:/Users/Hussain Badshah/.node-red/PLC_Alarm.csv';\n\n// ============================================\n// ADVANCED CSV PARSER - HANDLES COMMAS IN TEXT\n// ============================================\nfunction parseCSVLine(line, separator = ',') {\n    const result = [];\n    let current = '';\n    let inQuotes = false;\n    \n    for (let i = 0; i < line.length; i++) {\n        const char = line[i];\n        const nextChar = line[i + 1];\n        \n        if (char === '\"') {\n            if (inQuotes && nextChar === '\"') {\n                // Escaped quote\n                current += '\"';\n                i++;\n            } else {\n                // Toggle quote mode\n                inQuotes = !inQuotes;\n            }\n        } else if (char === separator && !inQuotes) {\n            // End of field\n            result.push(current.trim());\n            current = '';\n        } else {\n            current += char;\n        }\n    }\n    \n    // Add last field\n    result.push(current.trim());\n    \n    return result;\n}\n\ntry {\n    // Read CSV file\n    const csvData = fs.readFileSync(CSV_FILE_PATH, 'utf8');\n    \n    // Split into lines\n    const lines = csvData.split('\\n');\n    const firstLine = lines[0];\n    \n    // Detect separator\n    const separator = firstLine.includes(';') ? ';' : ',';\n    \n    // Parse headers\n    const headers = parseCSVLine(firstLine, separator);\n    \n    node.warn(`CSV Headers detected: ${headers.join(', ')}`);\n    node.warn(`Using separator: '${separator}'`);\n    \n    // Build alarm lookup cache\n    const alarmCache = {};\n    let loadedCount = 0;\n    let skippedCount = 0;\n    let truncatedDescriptions = [];\n    \n    for (let i = 1; i < lines.length; i++) {\n        const line = lines[i].trim();\n        if (!line) continue;\n        \n        // Parse CSV line properly (handles commas in descriptions)\n        const values = parseCSVLine(line, separator);\n        \n        // Column 0: Device (e.g., \"D1000.b0\")\n        // Column 1+: Everything else is the full comment (join all remaining columns)\n        const device = values[0]?.trim();\n        \n        // Join all columns after device to get full description\n        // This handles cases where description has commas\n        const fullComment = values.slice(1).join(',').trim();\n        \n        if (device) {\n            // Validate device format (should be like D1000.b0 or D1000.b10)\n            if (/^D\\d{4}\\.b\\d{1,2}$/.test(device)) {\n                alarmCache[device] = {\n                    comment: fullComment || 'Unknown Alarm',\n                    remark: ''\n                };\n                loadedCount++;\n                \n                // Check if description seems truncated (for debugging)\n                if (fullComment.length > 80) {\n                    truncatedDescriptions.push({\n                        device: device,\n                        comment: fullComment.substring(0, 80) + '...'\n                    });\n                }\n            } else {\n                skippedCount++;\n                if (skippedCount <= 5) {\n                    node.warn(`⚠️ Skipped invalid device format: \"${device}\"`);\n                }\n            }\n        }\n    }\n    \n    // Store in global context\n    global.set('alarmCache', alarmCache);\n    global.set('alarmCacheLoaded', true);\n    global.set('alarmCacheLoadTime', new Date().toISOString());\n    \n    node.warn(`✅ CSV Alarm Cache Loaded Successfully`);\n    node.warn(`  - File: ${CSV_FILE_PATH}`);\n    node.warn(`  - Total Alarms Loaded: ${loadedCount}`);\n    if (skippedCount > 0) {\n        node.warn(`  - Skipped Invalid Entries: ${skippedCount}`);\n    }\n    node.warn(`  - Cached at: ${new Date().toLocaleString()}`);\n    \n    // Verify D1000.b10 and D1000.b11 specifically\n    const testDevices = ['D1000.b10', 'D1000.b11'];\n    node.warn(`  - Verification of specific devices:`);\n    testDevices.forEach(deviceId => {\n        if (alarmCache[deviceId]) {\n            node.warn(`    ✓ ${deviceId}: \"${alarmCache[deviceId].comment}\"`);\n        } else {\n            node.warn(`    ✗ ${deviceId}: NOT FOUND`);\n        }\n    });\n    \n    // Show sample entries\n    const sampleKeys = Object.keys(alarmCache).slice(0, 5);\n    node.warn(`  - Sample entries:`);\n    sampleKeys.forEach(key => {\n        const desc = alarmCache[key].comment;\n        const displayDesc = desc.length > 60 ? desc.substring(0, 60) + '...' : desc;\n        node.warn(`    ${key}: \"${displayDesc}\"`);\n    });\n    \n    msg.payload = {\n        status: 'success',\n        alarmsLoaded: loadedCount,\n        skipped: skippedCount,\n        filePath: CSV_FILE_PATH,\n        sampleData: {\n            'D1000.b10': alarmCache['D1000.b10']?.comment,\n            'D1000.b11': alarmCache['D1000.b11']?.comment\n        }\n    };\n    \n    return msg;\n    \n} catch (error) {\n    node.error(`✗ Failed to load CSV file: ${error.message}`);\n    node.error(`  - Attempted path: ${CSV_FILE_PATH}`);\n    node.error(`  - Please check file path and permissions`);\n    node.error(`  - Error details: ${error.stack}`);\n    \n    global.set('alarmCacheLoaded', false);\n    \n    msg.payload = {\n        status: 'error',\n        error: error.message\n    };\n    \n    return msg;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "// Load CSV on Node-RED startup\n//const fs = require('fs');\n//const CSV_FILE_PATH = '/data/PLC_ALARM.csv';\nconst CSV_FILE_PATH = 'C:/Users/Hussain Badshah/.node-red/PLC_Alarm.csv';\ntry {\n    const csvData = fs.readFileSync(CSV_FILE_PATH, 'utf8');\n    const lines = csvData.split('\\n');\n    const separator = lines[0].includes(';') ? ';' : ',';\n    const alarmCache = {};\n    \n    for (let i = 1; i < lines.length; i++) {\n        const line = lines[i].trim();\n        if (!line) continue;\n        \n        const values = line.split(separator);\n        const device = values[0]?.trim();\n        const comment = values[1]?.trim();\n        \n        if (device && /^D\\d{4}\\.b\\d{1,2}$/.test(device)) {\n            alarmCache[device] = { \n                comment: comment || 'Unknown Alarm',\n                remark: ''\n            };\n        }\n    }\n    \n    global.set('alarmCache', alarmCache);\n    global.set('alarmCacheLoaded', true);\n    \n} catch (error) {\n    global.set('alarmCacheLoaded', false);\n}",
+        "finalize": "",
+        "libs": [
+            {
+                "var": "fs",
+                "module": "fs"
+            }
+        ],
+        "x": 3810,
+        "y": 1400,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "influx_connection",
+        "type": "influxdb",
+        "hostname": "localhost",
+        "port": "8086",
+        "protocol": "http",
+        "database": "plc_database",
+        "name": "InfluxDB Connection",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "timeout": "",
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "f276eb9fb041038c",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-influxdb": "0.7.0"
+        }
+    }
+]
